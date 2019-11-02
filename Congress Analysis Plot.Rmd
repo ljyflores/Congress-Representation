@@ -1,0 +1,159 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r, echo = FALSE, warnings = FALSE}
+#Packages
+library(rgdal)    
+library(ggplot2)   
+library(maptools)
+library(raster)
+library(dplyr)
+
+#Import Shapefiles
+s <- shapefile("/Users/lorenzoflores/Desktop/Yale_Academic/Stat Projects/Congress/Province Shapefiles/Provinces.shp")
+s <- s[order(s$PROVINCE),]
+s$PROVINCE <- sapply(s$PROVINCE,toupper)
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+#Import Data
+genderProvince <- read.csv("/Users/lorenzoflores/Desktop/Yale_Academic/Stat Projects/Congress/Province Shapefiles/genderProvince.csv")
+polParty <- read.csv("/Users/lorenzoflores/Desktop/Yale_Academic/Stat Projects/Congress/Province Shapefiles/polPartyData.csv")
+provParty <- read.csv("/Users/lorenzoflores/Desktop/Yale_Academic/Stat Projects/Congress/Province Shapefiles/provPartyData.csv")
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+#Gives data for cities in Manila
+processMap <- function(data){
+  dataProcess <- data[data$Province %in% setdiff(data$Province,s$PROVINCE),]
+  dataProcess <- dataProcess[!(sapply(dataProcess$Province,toupper) %in% sapply(c("","Bacolod","Bacolod City","Baguio", "Baguio City","Cagayan de Oro","Cagayan de Oro City","Calamba","Cebu City","Cotabato","Cotabato (North)","Davao (Davao del Norte)","Davao City", "Davao Occidental","Dinagat Islands6","Iligan","Iligan City","Iloilo City","Kalinga-Apayao","Lapu-Lapu City","Samar (Western)","San Jose del Monte","San Jose del Monte City","Zamboanga City"), toupper)),]
+  return (dataProcess)
+}
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+genderProvince$Province <- sapply(as.character(genderProvince$Province),toupper)
+genderProvince$Province.1 <- sapply(as.character(genderProvince$Province.1),toupper)
+genderProvince$Female <- as.numeric(genderProvince$Female)
+genderProvince$Male <- as.numeric(genderProvince$Male)
+genderProvince$Unidentified <- as.numeric(genderProvince$Unidentified)
+
+
+#Get Manila data and process
+genderProvinceManila <- processMap(genderProvince)
+genderProvince[nrow(genderProvince)+1,] <- c("METROPOLITAN MANILA",round(mean(genderProvinceManila$Female),2),round(mean(genderProvinceManila$Male),2),round(mean(genderProvinceManila$Unidentified),2),"METROPOLITAN MANILA")
+genderProvince[nrow(genderProvince)+1,] <- c("SHARIFF KABUNSUAN",0,0,0,"SHARIFF KABUNSUAN")
+genderProvince <- genderProvince[!(genderProvince$Province %in% setdiff(genderProvince$Province,s$PROVINCE)),]
+
+#Append to shapefile
+genderProvince <- genderProvince[order(genderProvince$Province),]
+s$female <- genderProvince$Female
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+polParty <- polParty[,-1]
+polParty$Province <- sapply(as.character(polParty$Province),toupper)
+polParty$Name <- as.character(polParty$Name)
+polParty$Years <- as.integer(polParty$Years)
+polParty$Count <- as.integer(polParty$Count)
+
+#Get Manila data and process
+polPartyManila <- processMap(polParty)
+maxIndex <- which(polPartyManila$Count == max(polPartyManila$Count))
+
+polParty[nrow(polParty)+1,] <- c("METROPOLITAN MANILA",polPartyManila$Name[maxIndex],polPartyManila$Years[maxIndex],polPartyManila$Count[maxIndex])
+polParty[nrow(polParty)+1,] <- c("SHARIFF KABUNSUAN",'',0,0)
+polParty <- polParty[!(polParty$Province %in% setdiff(polParty$Province,s$PROVINCE)),]
+
+#Append to shapefile
+polParty <- polParty[order(polParty$Province),]
+s$dynasty <- polParty$Count
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+provParty <- provParty[,-1]
+provParty$Province <- sapply(as.character(provParty$Province),toupper)
+provParty$Party <- as.character(provParty$Party)
+provParty$Years <- as.integer(provParty$Years)
+provParty$Count <- as.integer(provParty$Count)
+
+#Get Manila data and process
+provPartyManila <- processMap(provParty)
+maxIndex <- which(provPartyManila$Count == max(provPartyManila$Count))
+
+provParty[nrow(provParty)+1,] <- c("METROPOLITAN MANILA",provPartyManila$Party[maxIndex],0,provPartyManila$Count[maxIndex])
+provParty[nrow(provParty)+1,] <- c("SHARIFF KABUNSUAN",'',0,0)
+provParty <- provParty[!(provParty$Province %in% setdiff(provParty$Province,s$PROVINCE)),]
+
+#Append to shapefile
+provParty <- provParty[order(provParty$Province),]
+s$party <- provParty$Party
+```
+#### Female Representation by Province
+Note: The more red the province, the more male representatives, the more blue the province, the  more female representatives, white is balanced (50% male, 50% female)
+```{r, echo = FALSE, warnings = FALSE}
+s$female <- as.numeric(s$female)
+s$dynasty <- as.numeric(s$dynasty)
+
+library(RColorBrewer)
+library(viridis)
+
+map2color<-function(x,pal,limits=NULL){
+    if(is.null(limits)) limits=range(x)
+    pal[findInterval(x,seq(limits[1],limits[2],length.out=length(pal)+1), all.inside=TRUE)]
+}
+
+img <- function(obj, nam) {
+  image(1:length(obj), 1, as.matrix(1:length(obj)), col=obj, 
+        main = nam, ylab = "", xaxt = "n", yaxt = "n",  bty = "n")
+}
+rwb <- colorRampPalette(colors = c("red", "white", "blue"))
+
+colorFemale <- map2color(s$female, rwb(100))
+plot(s, col = colorFemale, main = "Percent Female Representation by Province")
+```
+
+#### Length of Family with Most Terms as Congress Person
+Note: Yellow is least (1-2 congress terms), dark red is most (10-11 congress terms)
+```{r, echo = FALSE, warnings = FALSE}
+colorDynasty <- map2color(s$dynasty, brewer.pal(9, 'YlOrRd'))
+plot(s, col = colorDynasty, main = "Length of Longest Political Dynasty Province")
+```
+
+#### Party Fielding Most Congress Representatives by Province
+Legend of Parties:
+
+* Yellow: Liberal
+
+* Light Blue: Lakas
+
+* Blue: LDP
+
+* Green: NPC
+
+* Red: Nacionalista
+
+* Orange: Independent
+
+* Gray: Other
+```{r, echo = FALSE, warnings = FALSE}
+s$partyColor <- rep(NA,length(s$party))
+s$partyColor[which(s$party == "Liberal")] <- "Yellow"
+s$partyColor[which(s$party == "Lakas")] <- "Light Blue"
+s$partyColor[which(s$party == "LDP")] <- "Blue"
+s$partyColor[which(s$party == "NPC")] <- "Green"
+s$partyColor[which(s$party == "Nacionalista")] <- "Red"
+s$partyColor[which(s$party == "Independent")] <- "Orange"
+s$partyColor[which(is.na(s$partyColor))] <- "Gray"
+s$partyColor
+```
+
+```{r, echo = FALSE, warnings = FALSE}
+plot(s, col = s$partyColor, main = "Dominant Party by Province")
+```
